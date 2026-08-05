@@ -82,16 +82,12 @@ No middleman. No markup. No rate-limited "free tier" wrapper. **Your keys, your 
 
 <div align="center">
 
-<!-- ⬇️ DOWNLOAD PLACEHOLDER — replace with your release links ⬇️ -->
+### [⬇️ Download Aether AI v1.0 (APK)](https://github.com/7amankrishna/Aether-Ai/raw/main/com.aistudio.aetherai.xkqmzv_1.0.apk)
 
-### [⬇️ Download Aether AI (APK) — Coming Soon](#)
-
+[![Direct APK](https://img.shields.io/badge/Direct%20APK-v1.0-3DDC84?logo=android&logoColor=white&style=for-the-badge)](https://github.com/7amankrishna/Aether-Ai/raw/main/com.aistudio.aetherai.xkqmzv_1.0.apk)
 [![Get it on Google Play](https://img.shields.io/badge/Google%20Play-Coming%20Soon-414141?logo=googleplay&logoColor=white&style=for-the-badge)](#)
-[![Direct APK](https://img.shields.io/badge/Direct%20APK-Coming%20Soon-3DDC84?logo=android&logoColor=white&style=for-the-badge)](#)
 
-<!-- ⬆️ END DOWNLOAD PLACEHOLDER ⬆️ -->
-
-*Requires Android 8.0+ · APK releases will appear on the [Releases](https://github.com/7amankrishna/Aether-Ai/releases) page*
+*Requires Android 8.0+ · Enable "Install from unknown sources" to install the APK*
 
 </div>
 
