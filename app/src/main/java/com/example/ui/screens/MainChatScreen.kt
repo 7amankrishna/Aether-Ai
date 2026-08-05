@@ -66,23 +66,47 @@ fun MainChatScreen(
 
     val listState = rememberLazyListState()
 
-    // Auto-scroll smoothly to bottom on new message or stream chunk
-    LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length) {
-        if (messages.isNotEmpty()) {
-            val targetIndex = messages.size - 1
-            val isLastStreaming = messages.lastOrNull()?.isStreaming == true
-            if (isLastStreaming) {
-                listState.scrollToItem(targetIndex)
-            } else {
-                listState.animateScrollToItem(targetIndex)
+    val isUserAtBottom by remember {
+        derivedStateOf {
+            val visibleItems = listState.layoutInfo.visibleItemsInfo
+            if (visibleItems.isEmpty() || messages.isEmpty()) true
+            else {
+                val lastVisible = visibleItems.last()
+                val isLastItem = lastVisible.index == messages.size - 1
+                if (!isLastItem) {
+                    false
+                } else {
+                    val itemBottom = lastVisible.offset + lastVisible.size
+                    val viewportBottom = listState.layoutInfo.viewportEndOffset
+                    itemBottom <= viewportBottom + 120
+                }
             }
         }
     }
 
     val isScrolledUp by remember {
         derivedStateOf {
-            val lastVisibleIdx = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            messages.isNotEmpty() && lastVisibleIdx < messages.size - 2
+            !isUserAtBottom
+        }
+    }
+
+    var previousMessageCount by remember { mutableStateOf(0) }
+
+    // Auto-scroll to bottom on new message or stream chunk
+    LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length) {
+        if (messages.isNotEmpty()) {
+            val targetIndex = messages.size - 1
+            val isNewMessageAdded = messages.size != previousMessageCount
+            previousMessageCount = messages.size
+
+            if (isNewMessageAdded || isUserAtBottom) {
+                val isLastStreaming = messages.lastOrNull()?.isStreaming == true
+                if (isLastStreaming) {
+                    listState.scrollToItem(targetIndex, scrollOffset = 100000)
+                } else {
+                    listState.animateScrollToItem(targetIndex, scrollOffset = 100000)
+                }
+            }
         }
     }
 
@@ -347,7 +371,7 @@ fun MainChatScreen(
                         onClick = {
                             scope.launch {
                                 if (messages.isNotEmpty()) {
-                                    listState.animateScrollToItem(messages.size - 1)
+                                    listState.animateScrollToItem(messages.size - 1, scrollOffset = 100000)
                                 }
                             }
                         },
@@ -387,6 +411,7 @@ fun MainChatScreen(
             onUpdateProviderAndModel = { provider, model -> viewModel.userPreferences.updateProviderAndModel(provider, model) },
             onUpdateCustomApiKey = { viewModel.userPreferences.updateCustomApiKey(it) },
             onUpdateCustomEndpoint = { viewModel.userPreferences.updateCustomEndpoint(it) },
+            onSelectAccessPoint = { viewModel.selectAccessPoint(it) },
             onFetchRemoteModels = { endpoint, key -> viewModel.fetchRemoteModels(endpoint, key) },
             onUpdateFontSize = { viewModel.userPreferences.updateFontSize(it) },
             onUpdateStreaming = { viewModel.userPreferences.updateStreamingEnabled(it) },

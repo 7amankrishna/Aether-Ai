@@ -14,12 +14,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -30,10 +32,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.ui.theme.CodeBlockBackground
 import com.example.ui.theme.CodeBlockHeader
 import com.example.ui.theme.CodeBlockText
 import com.example.ui.theme.TerracottaPrimary
+import com.example.utils.ImageUtils
+import kotlinx.coroutines.launch
 
 sealed class MarkdownBlock {
     data class Paragraph(val text: String) : MarkdownBlock()
@@ -43,13 +48,15 @@ sealed class MarkdownBlock {
     data class ListItem(val text: String, val isNumbered: Boolean = false, val number: Int = 1) : MarkdownBlock()
     data class TableBlock(val headers: List<String>, val rows: List<List<String>>) : MarkdownBlock()
     data class MathBlock(val latex: String) : MarkdownBlock()
+    data class ImageBlock(val alt: String, val imageUrl: String) : MarkdownBlock()
 }
 
 @Composable
 fun MarkdownText(
     markdown: String,
     modifier: Modifier = Modifier,
-    fontSizeSp: Float = 15f
+    fontSizeSp: Float = 15f,
+    onImageClick: (String) -> Unit = {}
 ) {
     val blocks = remember(markdown) {
         try {
@@ -81,6 +88,9 @@ fun MarkdownText(
                 }
                 is MarkdownBlock.CodeBlock -> {
                     CodeBlockCard(block.language, block.code)
+                }
+                is MarkdownBlock.ImageBlock -> {
+                    GeneratedImageCard(alt = block.alt, imageUrl = block.imageUrl, onImageClick = onImageClick)
                 }
                 is MarkdownBlock.Blockquote -> {
                     Row(
@@ -325,6 +335,82 @@ fun MathDisplay(latex: String) {
     }
 }
 
+@Composable
+fun GeneratedImageCard(
+    alt: String,
+    imageUrl: String,
+    onImageClick: (String) -> Unit = {}
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isSaving by remember { mutableStateOf(false) }
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .border(1.dp, TerracottaPrimary.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = alt.ifBlank { "AI Generated Image" },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 320.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onImageClick(imageUrl) },
+                contentScale = ContentScale.Crop
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = alt.ifBlank { "AI Generated Image" },
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Button(
+                    onClick = {
+                        isSaving = true
+                        scope.launch {
+                            ImageUtils.saveOrDownloadImage(context, imageUrl)
+                            isSaving = false
+                        }
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = TerracottaPrimary),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = "Download Image",
+                        modifier = Modifier.size(16.dp),
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isSaving) "Saving..." else "Download",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
 fun parseMarkdown(text: String): List<MarkdownBlock> {
     val blocks = mutableListOf<MarkdownBlock>()
     val lines = text.lines()
@@ -332,6 +418,16 @@ fun parseMarkdown(text: String): List<MarkdownBlock> {
 
     while (idx < lines.size) {
         val line = lines[idx]
+
+        // Image detection ![alt](url)
+        val imageMatch = Regex("!\\[(.*?)\\]\\((.*?)\\)").find(line.trim())
+        if (imageMatch != null) {
+            val alt = imageMatch.groupValues[1]
+            val imageUrl = imageMatch.groupValues[2]
+            blocks.add(MarkdownBlock.ImageBlock(alt, imageUrl))
+            idx++
+            continue
+        }
 
         // Code block
         if (line.trim().startsWith("```")) {

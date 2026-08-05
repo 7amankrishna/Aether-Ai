@@ -36,6 +36,7 @@ fun SettingsDialog(
     onUpdateProviderAndModel: (String, String) -> Unit,
     onUpdateCustomApiKey: (String) -> Unit,
     onUpdateCustomEndpoint: (String) -> Unit,
+    onSelectAccessPoint: (com.example.domain.models.AccessPoint) -> Unit = {},
     onFetchRemoteModels: (String, String) -> Unit,
     onUpdateFontSize: (Float) -> Unit,
     onUpdateStreaming: (Boolean) -> Unit,
@@ -101,14 +102,55 @@ fun SettingsDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // API Endpoint & Key Section
-                Text("Aerolink / Provider API Credentials", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                // Access Points Section
+                Text("API Access Point Profiles", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Input your Aerolink API key or custom URL to automatically load and select remote models.",
+                    "Switch access points in 1-click without re-entering credentials every time.",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                com.example.data.local.UserPreferences.DEFAULT_ACCESS_POINTS.forEach { ap ->
+                    val isSelected = settings.activeAccessPointId == ap.id
+                    Card(
+                        onClick = { onSelectAccessPoint(ap) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected)
+                                TerracottaPrimary.copy(alpha = 0.15f)
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(ap.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(ap.endpointUrl, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (isSelected) {
+                                FilterChip(
+                                    selected = true,
+                                    onClick = {},
+                                    label = { Text("Active", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Active API Endpoint & Key Details
+                Text("Active Credentials Config", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(
@@ -126,8 +168,8 @@ fun SettingsDialog(
                 OutlinedTextField(
                     value = settings.customApiKey,
                     onValueChange = onUpdateCustomApiKey,
-                    label = { Text("API Key (e.g. Aerolink Key)", fontSize = 12.sp) },
-                    placeholder = { Text("Enter your Aerolink or Custom API key") },
+                    label = { Text("API Key", fontSize = 12.sp) },
+                    placeholder = { Text("Enter your API key") },
                     visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),

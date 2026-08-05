@@ -150,6 +150,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         ttsHelper.stop()
     }
 
+    fun selectAccessPoint(ap: com.example.domain.models.AccessPoint) {
+        userPreferences.selectAccessPoint(ap)
+    }
+
     fun updateCurrentConversationModel(modelId: String, providerId: String) {
         val currentConv = _selectedConversation.value ?: return
         val updatedConv = currentConv.copy(modelId = modelId, providerId = providerId)

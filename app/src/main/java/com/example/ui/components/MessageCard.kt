@@ -166,7 +166,8 @@ fun MessageCard(
                 } else if (message.content.isNotEmpty()) {
                     MarkdownText(
                         markdown = message.content,
-                        fontSizeSp = fontSizeSp
+                        fontSizeSp = fontSizeSp,
+                        onImageClick = onImageClick
                     )
                 }
             }
