@@ -23,6 +23,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.Upload
 import com.example.data.local.AppThemeMode
 import com.example.data.local.UserSettings
 import com.example.domain.models.ProviderRegistry
@@ -42,11 +45,54 @@ fun SettingsDialog(
     onUpdateStreaming: (Boolean) -> Unit,
     onUpdateHaptics: (Boolean) -> Unit,
     onClearAllHistory: () -> Unit,
+    onExportBackup: ((String) -> Unit) -> Unit = {},
+    onImportBackup: (String, (Boolean) -> Unit) -> Unit = { _, _ -> },
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     var isApiKeyVisible by remember { mutableStateOf(false) }
     val providers by ProviderRegistry.providersState.collectAsState()
+
+    var pendingExportJson by remember { mutableStateOf<String?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null && pendingExportJson != null) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(pendingExportJson!!.toByteArray())
+                }
+                Toast.makeText(context, "Backup exported successfully!", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+            pendingExportJson = null
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val jsonStr = context.contentResolver.openInputStream(uri)?.use { input ->
+                    input.bufferedReader().readText()
+                }
+                if (!jsonStr.isNullOrBlank()) {
+                    onImportBackup(jsonStr) { success ->
+                        if (success) {
+                            Toast.makeText(context, "Chats imported successfully!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Failed to import invalid backup JSON", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Import failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -268,14 +314,19 @@ fun SettingsDialog(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
-                // Action Buttons
+                Text("Backup & Export Data", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(6.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
                         onClick = {
-                            Toast.makeText(context, "Conversations exported to JSON", Toast.LENGTH_SHORT).show()
+                            onExportBackup { json ->
+                                pendingExportJson = json
+                                exportLauncher.launch("aether_chats_backup_${System.currentTimeMillis() / 1000}.json")
+                            }
                         },
                         modifier = Modifier.weight(1f)
                     ) {
@@ -284,19 +335,32 @@ fun SettingsDialog(
                         Text("Export", fontSize = 12.sp)
                     }
 
-                    Button(
+                    OutlinedButton(
                         onClick = {
-                            onClearAllHistory()
-                            Toast.makeText(context, "History cleared", Toast.LENGTH_SHORT).show()
-                            onDismiss()
+                            importLauncher.launch(arrayOf("application/json", "*/*"))
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = MaterialTheme.colorScheme.onError, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Clear All", fontSize = 12.sp, color = MaterialTheme.colorScheme.onError)
+                        Text("Import", fontSize = 12.sp)
                     }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Button(
+                    onClick = {
+                        onClearAllHistory()
+                        Toast.makeText(context, "All history cleared", Toast.LENGTH_SHORT).show()
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = MaterialTheme.colorScheme.onError, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Clear All Data", fontSize = 12.sp, color = MaterialTheme.colorScheme.onError)
                 }
             }
         }

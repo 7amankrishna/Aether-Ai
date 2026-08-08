@@ -86,13 +86,13 @@ object ProviderRegistry {
         val index = current.indexOfFirst { it.id == providerId }
         if (index != -1) {
             val provider = current[index]
-            val mergedModels = (dynamicModels + provider.models).distinctBy { it.id }
-            current[index] = provider.copy(models = mergedModels)
+            // Dynamic models fetched directly from API take precedence
+            current[index] = provider.copy(models = dynamicModels)
         } else {
             current.add(
                 AiProvider(
                     id = providerId,
-                    name = if (providerId == "aerolink") "Aerolink (Anthropic)" else providerId.replaceFirstChar { it.uppercase() },
+                    name = if (providerId == "aerolink") "Aerolink Gateway" else providerId.replaceFirstChar { it.uppercase() },
                     iconName = if (providerId == "aerolink") "anthropic" else "custom",
                     models = dynamicModels
                 )

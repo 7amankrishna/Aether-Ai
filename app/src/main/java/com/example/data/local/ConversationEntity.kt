@@ -13,5 +13,6 @@ data class ConversationEntity(
     val isArchived: Boolean = false,
     val modelId: String = "gemini-3.5-flash",
     val providerId: String = "gemini",
-    val systemPrompt: String = ""
+    val systemPrompt: String = "",
+    val folderId: String? = null
 )

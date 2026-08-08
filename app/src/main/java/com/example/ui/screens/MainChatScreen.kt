@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -16,8 +17,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,11 +28,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.domain.models.ChatMessage
 import com.example.domain.models.ProviderRegistry
 import com.example.ui.components.*
 import com.example.ui.theme.TerracottaPrimary
@@ -45,10 +51,20 @@ fun MainChatScreen(
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+
+    LaunchedEffect(drawerState.isOpen) {
+        if (drawerState.isOpen) {
+            focusManager.clearFocus()
+        }
+    }
 
     val activeConvs by viewModel.activeConversations.collectAsStateWithLifecycle()
     val archivedConvs by viewModel.archivedConversations.collectAsStateWithLifecycle()
     val memories by viewModel.memories.collectAsStateWithLifecycle()
+    val folders by viewModel.folders.collectAsStateWithLifecycle()
+    val selectedFolderId by viewModel.selectedFolderId.collectAsStateWithLifecycle()
     val speakingMessageId by viewModel.ttsHelper.speakingMessageId.collectAsStateWithLifecycle()
 
     val selectedConv by viewModel.selectedConversation.collectAsStateWithLifecycle()
@@ -63,6 +79,8 @@ fun MainChatScreen(
     var isMemoryOpen by remember { mutableStateOf(false) }
     var previewImageUri by remember { mutableStateOf<String?>(null) }
     var isModelDropdownExpanded by remember { mutableStateOf(false) }
+    var highlightMessageTarget by remember { mutableStateOf<ChatMessage?>(null) }
+    var showMessageSelectorForHighlight by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
 
@@ -136,7 +154,13 @@ fun MainChatScreen(
                 onOpenAdmin = {
                     scope.launch { drawerState.close() }
                     isAdminOpen = true
-                }
+                },
+                folders = folders,
+                selectedFolderId = selectedFolderId,
+                onSelectFolder = { viewModel.selectFolder(it) },
+                onCreateFolder = { name, colorHex, emoji -> viewModel.createFolder(name, colorHex, emoji) },
+                onDeleteFolder = { viewModel.deleteFolder(it) },
+                onAssignConversationToFolder = { convId, fId -> viewModel.assignConversationToFolder(convId, fId) }
             )
         }
     ) {
@@ -187,15 +211,41 @@ fun MainChatScreen(
                                 expanded = isModelDropdownExpanded,
                                 onDismissRequest = { isModelDropdownExpanded = false }
                             ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Refresh, contentDescription = null, tint = TerracottaPrimary, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Refresh Models from API", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TerracottaPrimary)
+                                        }
+                                    },
+                                    onClick = {
+                                        isModelDropdownExpanded = false
+                                        viewModel.fetchRemoteModels()
+                                    }
+                                )
+                                HorizontalDivider()
+
                                 providers.forEach { provider ->
                                     DropdownMenuItem(
-                                        text = { Text(provider.name, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TerracottaPrimary) },
+                                        text = { Text(provider.name.uppercase(), fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                                         onClick = {},
                                         enabled = false
                                     )
                                     provider.models.forEach { model ->
                                         DropdownMenuItem(
-                                            text = { Text(model.name, fontSize = 13.sp) },
+                                            text = {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Text(model.name, fontSize = 13.sp, fontWeight = if (model.id == userSettings.selectedModelId) FontWeight.Bold else FontWeight.Normal)
+                                                    if (model.id == userSettings.selectedModelId) {
+                                                        Icon(Icons.Default.Check, contentDescription = "Selected", tint = TerracottaPrimary, modifier = Modifier.size(16.dp))
+                                                    }
+                                                }
+                                            },
                                             onClick = {
                                                 isModelDropdownExpanded = false
                                                 viewModel.userPreferences.updateProviderAndModel(provider.id, model.id)
@@ -258,6 +308,16 @@ fun MainChatScreen(
                     attachments = attachments,
                     onAddAttachment = { viewModel.addAttachment(it) },
                     onRemoveAttachment = { viewModel.removeAttachment(it) },
+                    onHighlightClick = {
+                        val validMessages = messages.filter { it.content.isNotBlank() }
+                        if (validMessages.isEmpty()) {
+                            Toast.makeText(context, "No chat messages to highlight yet", Toast.LENGTH_SHORT).show()
+                        } else if (validMessages.size == 1) {
+                            highlightMessageTarget = validMessages.first()
+                        } else {
+                            showMessageSelectorForHighlight = true
+                        }
+                    },
                     modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
                 )
             },
@@ -350,9 +410,13 @@ fun MainChatScreen(
                                 message = msg,
                                 fontSizeSp = userSettings.fontSizeSp,
                                 speakingMessageId = speakingMessageId,
+                                isDrawerOpen = drawerState.isOpen,
                                 onRegenerate = { viewModel.regenerateLastResponse() },
+                                onEditPrompt = { viewModel.onPromptChange(it) },
                                 onImageClick = { previewImageUri = it },
-                                onSpeakClick = { id, text -> viewModel.speakMessage(id, text) }
+                                onSpeakClick = { id, text -> viewModel.speakMessage(id, text) },
+                                onSaveToMemory = { key, value -> viewModel.addMemory(key, value) },
+                                onUpdateContent = { id, content -> viewModel.updateMessageContent(id, content) }
                             )
                         }
                     }
@@ -393,7 +457,9 @@ fun MainChatScreen(
             onAddMemory = { viewModel.addMemory(it) },
             onToggleMemory = { id, enabled -> viewModel.toggleMemory(id, enabled) },
             onDeleteMemory = { id -> viewModel.deleteMemory(id) },
-            onDismiss = { isMemoryOpen = false }
+            onDismiss = { isMemoryOpen = false },
+            folders = folders,
+            activeFolderId = selectedFolderId
         )
     }
 
@@ -417,6 +483,8 @@ fun MainChatScreen(
             onUpdateStreaming = { viewModel.userPreferences.updateStreamingEnabled(it) },
             onUpdateHaptics = { viewModel.userPreferences.updateHapticsEnabled(it) },
             onClearAllHistory = { viewModel.clearAllHistory() },
+            onExportBackup = { callback -> viewModel.exportBackup(callback) },
+            onImportBackup = { json, callback -> viewModel.importBackup(json, callback) },
             onDismiss = { isSettingsOpen = false }
         )
     }
@@ -428,6 +496,28 @@ fun MainChatScreen(
             onUpdateTemperature = { viewModel.userPreferences.updateTemperature(it) },
             onUpdateSystemPrompt = { viewModel.userPreferences.updateSystemPrompt(it) },
             onDismiss = { isAdminOpen = false }
+        )
+    }
+
+    highlightMessageTarget?.let { targetMsg ->
+        HighlightReviewDialog(
+            initialContent = targetMsg.content,
+            onDismiss = { highlightMessageTarget = null },
+            onSave = { updatedContent ->
+                viewModel.updateMessageContent(targetMsg.id, updatedContent)
+                highlightMessageTarget = null
+            }
+        )
+    }
+
+    if (showMessageSelectorForHighlight) {
+        SelectMessageToHighlightDialog(
+            messages = messages.filter { it.content.isNotBlank() },
+            onSelectMessage = { selectedMsg ->
+                highlightMessageTarget = selectedMsg
+                showMessageSelectorForHighlight = false
+            },
+            onDismiss = { showMessageSelectorForHighlight = false }
         )
     }
 }

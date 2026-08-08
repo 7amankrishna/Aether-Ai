@@ -11,6 +11,9 @@ interface MemoryDao {
     @Query("SELECT * FROM user_memories WHERE isEnabled = 1")
     suspend fun getActiveMemories(): List<MemoryEntity>
 
+    @Query("SELECT * FROM user_memories WHERE isEnabled = 1 AND (folderId = :folderId OR folderId IS NULL)")
+    suspend fun getActiveMemoriesForFolder(folderId: String?): List<MemoryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMemory(memory: MemoryEntity)
 

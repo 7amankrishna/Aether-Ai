@@ -15,6 +15,9 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE isArchived = 1 ORDER BY updatedAt DESC")
     fun getArchivedConversations(): Flow<List<ConversationEntity>>
 
+    @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
+    suspend fun getAllConversationsList(): List<ConversationEntity>
+
     @Query("SELECT * FROM conversations WHERE id = :id")
     suspend fun getConversationById(id: String): ConversationEntity?
 
@@ -38,6 +41,9 @@ interface ConversationDao {
 
     @Query("UPDATE conversations SET modelId = :modelId, providerId = :providerId WHERE id = :id")
     suspend fun updateModelAndProvider(id: String, modelId: String, providerId: String)
+
+    @Query("UPDATE conversations SET folderId = :folderId WHERE id = :id")
+    suspend fun updateFolderId(id: String, folderId: String?)
 
     @Query("DELETE FROM conversations")
     suspend fun clearAll()

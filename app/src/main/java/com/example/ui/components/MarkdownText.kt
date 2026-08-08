@@ -147,7 +147,8 @@ fun FormattedRichText(
 ) {
     val annotated = buildAnnotatedString {
         var index = 0
-        val regex = Regex("(\\$\\$[\\s\\S]*?\\$\\$|\\$[^\$]+\\$|```[\\s\\S]*?```|`[^`]+`|\\*\\*.*?\\*\\*|\\*.*?\\*|_.*?_)")
+        // Match highlights, inline math, code, bold, italic
+        val regex = Regex("(<mark(?: color=\"(yellow|green|pink|cyan|orange)\")?>[\\s\\S]*?<\\/mark>|==[\\s\\S]*?==|\\$[^\$\\n]+\\$|`[^`]+`|\\*\\*.*?\\*\\*|\\*.*?\\*|_.*?_)")
         val matches = regex.findAll(text)
 
         for (match in matches) {
@@ -157,6 +158,51 @@ fun FormattedRichText(
 
             val value = match.value
             when {
+                value.startsWith("<mark") && value.endsWith("</mark>") -> {
+                    val colorAttr = Regex("color=\"(yellow|green|pink|cyan|orange)\"").find(value)?.groupValues?.get(1) ?: "yellow"
+                    val highlightBg = when (colorAttr.lowercase()) {
+                        "green" -> Color(0xFFA5D6A7)
+                        "pink" -> Color(0xFFF48FB1)
+                        "cyan" -> Color(0xFF80DEEA)
+                        "orange" -> Color(0xFFFFCC80)
+                        else -> Color(0xFFFFF176) // Yellow
+                    }
+                    val innerText = value.replace(Regex("<mark[^>]*>"), "").replace("</mark>", "")
+                    withStyle(
+                        SpanStyle(
+                            background = highlightBg,
+                            color = Color.Black,
+                            fontWeight = FontWeight.Medium
+                        )
+                    ) {
+                        append(innerText)
+                    }
+                }
+                value.startsWith("==") && value.endsWith("==") && value.length >= 4 -> {
+                    withStyle(
+                        SpanStyle(
+                            background = Color(0xFFFFF176),
+                            color = Color.Black,
+                            fontWeight = FontWeight.Medium
+                        )
+                    ) {
+                        append(value.substring(2, value.length - 2))
+                    }
+                }
+                value.startsWith("$") && value.endsWith("$") && value.length >= 2 -> {
+                    val rawMath = value.substring(1, value.length - 1)
+                    val formattedMath = formatLatexToUnicode(rawMath)
+                    withStyle(
+                        SpanStyle(
+                            fontFamily = FontFamily.Serif,
+                            background = TerracottaPrimary.copy(alpha = 0.15f),
+                            color = TerracottaPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    ) {
+                        append(" $formattedMath ")
+                    }
+                }
                 value.startsWith("**") && value.endsWith("**") && value.length >= 4 -> {
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
                         append(value.substring(2, value.length - 2))
@@ -315,23 +361,75 @@ fun TableDisplay(headers: List<String>, rows: List<List<String>>, fontSizeSp: Fl
     }
 }
 
+fun formatLatexToUnicode(latex: String): String {
+    var result = latex
+        .replace("\\frac{", "(")
+        .replace("}{", " / ")
+        .replace("}", ")")
+        .replace("\\sqrt{", "√(")
+        .replace("\\sum", "∑")
+        .replace("\\int", "∫")
+        .replace("\\alpha", "α")
+        .replace("\\beta", "β")
+        .replace("\\gamma", "γ")
+        .replace("\\delta", "δ")
+        .replace("\\theta", "θ")
+        .replace("\\lambda", "λ")
+        .replace("\\pi", "π")
+        .replace("\\sigma", "σ")
+        .replace("\\infty", "∞")
+        .replace("\\pm", "±")
+        .replace("\\neq", "≠")
+        .replace("\\leq", "≤")
+        .replace("\\geq", "≥")
+        .replace("\\times", "×")
+        .replace("\\div", "÷")
+        .replace("\\approx", "≈")
+        .replace("\\cdot", "·")
+        .replace("\\Delta", "Δ")
+        .replace("^2", "²")
+        .replace("^3", "³")
+        .replace("^1", "¹")
+        .replace("_0", "₀")
+        .replace("_1", "₁")
+        .replace("_2", "₂")
+        .replace("_n", "ₙ")
+        .replace("_x", "ₓ")
+        .replace("\\text{", "")
+        .replace("\\mathrm{", "")
+        .replace("\\mathbf{", "")
+
+    return result.trim()
+}
+
 @Composable
 fun MathDisplay(latex: String) {
+    val formatted = remember(latex) { formatLatexToUnicode(latex) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            .background(TerracottaPrimary.copy(alpha = 0.12f))
+            .border(1.dp, TerracottaPrimary.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
             .padding(12.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = latex,
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.Medium,
-            fontSize = 16.sp,
-            color = TerracottaPrimary
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "Mathematical Formula",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = TerracottaPrimary.copy(alpha = 0.8f)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = formatted,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                color = TerracottaPrimary
+            )
+        }
     }
 }
 

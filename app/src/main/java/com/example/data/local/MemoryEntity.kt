@@ -10,14 +10,16 @@ data class MemoryEntity(
     val category: String,
     val content: String,
     val isEnabled: Boolean = true,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val folderId: String? = null
 ) {
     fun toDomain(): UserMemory = UserMemory(
         id = id,
         category = category,
         content = content,
         isEnabled = isEnabled,
-        timestamp = timestamp
+        timestamp = timestamp,
+        folderId = folderId
     )
 
     companion object {
@@ -26,7 +28,8 @@ data class MemoryEntity(
             category = domain.category,
             content = domain.content,
             isEnabled = domain.isEnabled,
-            timestamp = domain.timestamp
+            timestamp = domain.timestamp,
+            folderId = domain.folderId
         )
     }
 }

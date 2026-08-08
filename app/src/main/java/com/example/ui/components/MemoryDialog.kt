@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.domain.models.ChatFolder
 import com.example.domain.models.UserMemory
 import com.example.ui.theme.TerracottaContainer
 import com.example.ui.theme.TerracottaPrimary
@@ -39,14 +41,31 @@ fun MemoryDialog(
     onAddMemory: (UserMemory) -> Unit,
     onToggleMemory: (String, Boolean) -> Unit,
     onDeleteMemory: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    folders: List<ChatFolder> = emptyList(),
+    activeFolderId: String? = null
 ) {
     val context = LocalContext.current
     var newCategory by remember { mutableStateOf("User Preference") }
     var newContent by remember { mutableStateOf("") }
     var isAddingNew by remember { mutableStateOf(false) }
+    var memoryScopeTarget by remember { mutableStateOf(if (activeFolderId != null) "folder" else "global") } // "folder" or "global"
+
+    var selectedFilterTab by remember { mutableIntStateOf(if (activeFolderId != null) 0 else 2) } // 0: Folder, 1: Global, 2: All
+
+    val currentFolder = remember(activeFolderId, folders) {
+        folders.find { it.id == activeFolderId }
+    }
 
     val categories = listOf("User Preference", "Identity", "Project Context", "Custom Memory")
+
+    val filteredMemories = remember(selectedFilterTab, activeFolderId, memories) {
+        when (selectedFilterTab) {
+            0 -> memories.filter { it.folderId == activeFolderId }
+            1 -> memories.filter { it.folderId == null }
+            else -> memories
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -60,7 +79,7 @@ fun MemoryDialog(
             Column(
                 modifier = Modifier
                     .padding(20.dp)
-                    .fillMaxHeight(0.85f)
+                    .fillMaxHeight(0.88f)
             ) {
                 // Header
                 Row(
@@ -84,13 +103,13 @@ fun MemoryDialog(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "AI Memory & Context",
+                            text = "AI Isolated Memory",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Persistent memory shared across all model switches",
+                            text = if (currentFolder != null) "${currentFolder.emoji} Dedicated memory for ${currentFolder.name}" else "Isolated project memory and global preferences",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -100,7 +119,36 @@ fun MemoryDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Scope Filter Tabs
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (currentFolder != null) {
+                        FilterChip(
+                            selected = selectedFilterTab == 0,
+                            onClick = { selectedFilterTab = 0 },
+                            label = { Text("${currentFolder.emoji} Folder", fontSize = 11.sp) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    FilterChip(
+                        selected = selectedFilterTab == 1,
+                        onClick = { selectedFilterTab = 1 },
+                        label = { Text("🌐 Global", fontSize = 11.sp) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = selectedFilterTab == 2,
+                        onClick = { selectedFilterTab = 2 },
+                        label = { Text("All (${memories.size})", fontSize = 11.sp) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Action Row: Add Custom & Export Button
                 Row(
@@ -120,15 +168,16 @@ fun MemoryDialog(
 
                     OutlinedButton(
                         onClick = {
-                            if (memories.isEmpty()) {
-                                Toast.makeText(context, "No memories stored to export.", Toast.LENGTH_SHORT).show()
+                            if (filteredMemories.isEmpty()) {
+                                Toast.makeText(context, "No memories in current view to export.", Toast.LENGTH_SHORT).show()
                             } else {
                                 val exportText = buildString {
                                     appendLine("# AI User Context Memory Export")
                                     appendLine("Exported at: ${java.util.Date()}\n")
-                                    memories.forEach { mem ->
+                                    filteredMemories.forEach { mem ->
                                         val status = if (mem.isEnabled) "ACTIVE" else "INACTIVE"
-                                        appendLine("• [$status] [${mem.category}]: ${mem.content}")
+                                        val scope = if (mem.folderId != null) "Folder:${mem.folderId}" else "Global"
+                                        appendLine("• [$status] [$scope] [${mem.category}]: ${mem.content}")
                                     }
                                 }
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -153,6 +202,25 @@ fun MemoryDialog(
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                             .padding(12.dp)
                     ) {
+                        if (currentFolder != null) {
+                            Text("Memory Scope Target", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(vertical = 6.dp)
+                            ) {
+                                FilterChip(
+                                    selected = memoryScopeTarget == "folder",
+                                    onClick = { memoryScopeTarget = "folder" },
+                                    label = { Text("${currentFolder.emoji} Current Folder Only", fontSize = 11.sp) }
+                                )
+                                FilterChip(
+                                    selected = memoryScopeTarget == "global",
+                                    onClick = { memoryScopeTarget = "global" },
+                                    label = { Text("🌐 Global (All Chats)", fontSize = 11.sp) }
+                                )
+                            }
+                        }
+
                         Text("Category", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -170,7 +238,7 @@ fun MemoryDialog(
                         OutlinedTextField(
                             value = newContent,
                             onValueChange = { newContent = it },
-                            placeholder = { Text("e.g. Always generate concise Kotlin code.", fontSize = 12.sp) },
+                            placeholder = { Text("e.g. Always summarize findings in bullet points for this project.", fontSize = 12.sp) },
                             modifier = Modifier.fillMaxWidth(),
                             maxLines = 3
                         )
@@ -180,12 +248,14 @@ fun MemoryDialog(
                         Button(
                             onClick = {
                                 if (newContent.isNotBlank()) {
+                                    val targetFolderId = if (memoryScopeTarget == "folder") activeFolderId else null
                                     onAddMemory(
                                         UserMemory(
                                             id = UUID.randomUUID().toString(),
                                             category = newCategory,
                                             content = newContent.trim(),
-                                            isEnabled = true
+                                            isEnabled = true,
+                                            folderId = targetFolderId
                                         )
                                     )
                                     newContent = ""
@@ -205,7 +275,7 @@ fun MemoryDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Memories List
-                if (memories.isEmpty()) {
+                if (filteredMemories.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -221,12 +291,12 @@ fun MemoryDialog(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "No persistent memory yet",
+                                text = "No memories stored for this scope",
                                 fontSize = 14.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "Add memory items above so the AI remembers your context across all models",
+                                text = "Add facts or project notes above so the AI retains custom context for this project",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.padding(horizontal = 24.dp)
@@ -238,7 +308,9 @@ fun MemoryDialog(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(memories, key = { it.id }) { mem ->
+                        items(filteredMemories, key = { it.id }) { mem ->
+                            val memFolder = folders.find { it.id == mem.folderId }
+
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
@@ -255,12 +327,37 @@ fun MemoryDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = mem.category.uppercase(),
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = TerracottaPrimary
-                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = mem.category.uppercase(),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TerracottaPrimary
+                                            )
+
+                                            if (memFolder != null) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                val fColor = try {
+                                                    Color(android.graphics.Color.parseColor(memFolder.colorHex))
+                                                } catch (e: Exception) {
+                                                    TerracottaPrimary
+                                                }
+                                                Surface(
+                                                    color = fColor.copy(alpha = 0.2f),
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    border = BorderStroke(1.dp, fColor.copy(alpha = 0.5f))
+                                                ) {
+                                                    Text(
+                                                        text = "${memFolder.emoji} ${memFolder.name}",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = fColor,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = mem.content,

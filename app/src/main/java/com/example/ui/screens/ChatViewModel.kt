@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+import com.example.domain.models.ChatFolder
 import com.example.domain.models.UserMemory
 import com.example.utils.TtsHelper
 
@@ -30,10 +31,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = ChatRepository(
         conversationDao = database.conversationDao(),
         messageDao = database.messageDao(),
-        memoryDao = database.memoryDao()
+        memoryDao = database.memoryDao(),
+        folderDao = database.folderDao()
     )
     val userPreferences = UserPreferences(application)
     val ttsHelper = TtsHelper(application)
+
+    val folders: StateFlow<List<ChatFolder>> = repository.allFolders
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _selectedFolderId = MutableStateFlow<String?>(null)
+    val selectedFolderId: StateFlow<String?> = _selectedFolderId.asStateFlow()
 
     val activeConversations: StateFlow<List<Conversation>> = repository.activeConversations
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -111,10 +119,55 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _attachments.value = _attachments.value - attachment
     }
 
+    fun selectFolder(folderId: String?) {
+        _selectedFolderId.value = folderId
+    }
+
+    fun createFolder(name: String, colorHex: String, emoji: String) {
+        viewModelScope.launch {
+            val newFolder = ChatFolder(
+                id = UUID.randomUUID().toString(),
+                name = name.trim(),
+                colorHex = colorHex,
+                emoji = emoji
+            )
+            repository.insertFolder(newFolder)
+            _selectedFolderId.value = newFolder.id
+        }
+    }
+
+    fun updateFolder(folder: ChatFolder) {
+        viewModelScope.launch {
+            repository.updateFolder(folder)
+        }
+    }
+
+    fun deleteFolder(folderId: String) {
+        viewModelScope.launch {
+            repository.deleteFolder(folderId)
+            if (_selectedFolderId.value == folderId) {
+                _selectedFolderId.value = null
+            }
+        }
+    }
+
+    fun assignConversationToFolder(conversationId: String, folderId: String?) {
+        viewModelScope.launch {
+            repository.updateConversationFolder(conversationId, folderId)
+            // Update selected conversation in state if it's the current one
+            if (_selectedConversation.value?.id == conversationId) {
+                _selectedConversation.value = _selectedConversation.value?.copy(folderId = folderId)
+            }
+        }
+    }
+
     fun selectConversation(conversation: Conversation) {
         messagesJob?.cancel()
         _messages.value = emptyList() // Immediately clear previous messages to prevent glimpses of old chats
         _selectedConversation.value = conversation
+        if (conversation.folderId != null) {
+            _selectedFolderId.value = conversation.folderId
+        }
         messagesJob = viewModelScope.launch {
             repository.getMessagesForConversation(conversation.id).collect { msgList ->
                 if (_selectedConversation.value?.id == conversation.id) {
@@ -124,9 +177,23 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun addMemory(category: String, content: String) {
+        viewModelScope.launch {
+            val memory = UserMemory(
+                id = UUID.randomUUID().toString(),
+                category = category,
+                content = content,
+                isEnabled = true,
+                folderId = _selectedFolderId.value
+            )
+            repository.insertMemory(memory)
+        }
+    }
+
     fun addMemory(memory: UserMemory) {
         viewModelScope.launch {
-            repository.insertMemory(memory)
+            val memWithFolder = if (memory.folderId == null) memory.copy(folderId = _selectedFolderId.value) else memory
+            repository.insertMemory(memWithFolder)
         }
     }
 
@@ -139,6 +206,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteMemory(id: String) {
         viewModelScope.launch {
             repository.deleteMemory(id)
+        }
+    }
+
+    fun updateMessageContent(messageId: String, newContent: String) {
+        viewModelScope.launch {
+            val msg = _messages.value.find { it.id == messageId }
+            if (msg != null) {
+                val updated = msg.copy(content = newContent)
+                repository.insertMessage(updated)
+            }
         }
     }
 
@@ -164,17 +241,60 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun createNewChat() {
+        val currentConv = _selectedConversation.value
+        if (currentConv != null && _messages.value.isEmpty()) {
+            if (currentConv.folderId != _selectedFolderId.value) {
+                assignConversationToFolder(currentConv.id, _selectedFolderId.value)
+            }
+            return
+        }
+
         messagesJob?.cancel()
         _selectedConversation.value = null
-        _messages.value = emptyList() // Clear messages state immediately
+        _messages.value = emptyList()
+
         viewModelScope.launch {
+            val activeList = repository.activeConversations.first()
+            val emptyConv = activeList.firstOrNull { conv ->
+                val msgs = repository.getMessagesForConversation(conv.id).first()
+                msgs.isEmpty()
+            }
+            if (emptyConv != null) {
+                if (emptyConv.folderId != _selectedFolderId.value) {
+                    repository.updateConversationFolder(emptyConv.id, _selectedFolderId.value)
+                }
+                selectConversation(emptyConv)
+                return@launch
+            }
+
             val currentSettings = settings.value
             val newConv = repository.createNewConversation(
                 title = "New Chat",
                 modelId = currentSettings.selectedModelId,
-                providerId = currentSettings.selectedProviderId
+                providerId = currentSettings.selectedProviderId,
+                folderId = _selectedFolderId.value
             )
             selectConversation(newConv)
+        }
+    }
+
+    fun exportBackup(onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            val json = repository.exportBackupJson()
+            onResult(json)
+        }
+    }
+
+    fun importBackup(jsonStr: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val success = repository.importBackupJson(jsonStr)
+            if (success) {
+                val convs = activeConversations.first()
+                if (convs.isNotEmpty()) {
+                    selectConversation(convs.first())
+                }
+            }
+            onResult(success)
         }
     }
 
@@ -209,12 +329,29 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             repository.insertMessage(userMessage)
+            extractUserMemoryFromPrompt(prompt)
             generateAiResponse(
                 conversation = currentConv,
                 prompt = prompt,
                 imageBase64 = base64Data.ifEmpty { null },
                 imageMimeType = mimeType.ifEmpty { null }
             )
+        }
+    }
+
+    private fun extractUserMemoryFromPrompt(prompt: String) {
+        val lower = prompt.lowercase()
+        val triggers = listOf("remember that ", "remember: ", "remember ", "keep in mind that ", "save to memory: ", "note that ")
+        for (tr in triggers) {
+            if (lower.contains(tr)) {
+                val idx = lower.indexOf(tr) + tr.length
+                val fact = prompt.substring(idx).trim()
+                if (fact.isNotBlank()) {
+                    val key = if (fact.length > 30) fact.take(30) + "..." else fact
+                    addMemory("User Fact: $key", fact)
+                    break
+                }
+            }
         }
     }
 
@@ -240,7 +377,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             repository.insertMessage(assistantPlaceholder)
 
             val currentSettings = settings.value
-            val memoryContext = repository.getActiveMemoryContext()
+            val memoryContext = repository.getActiveMemoryContext(conversation.folderId ?: _selectedFolderId.value)
             val fullSystemPrompt = currentSettings.systemPrompt + memoryContext
             val history = _messages.value.dropLast(1) // exclude placeholder
             val activeModelId = currentSettings.selectedModelId.ifBlank { conversation.modelId }
@@ -250,6 +387,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             var lastDbWriteTime = 0L
 
             currentStreamJob = launch {
+                var isErrorOccurred = false
+                var errorText = ""
+
                 repository.streamAiResponse(
                     prompt = prompt,
                     history = history,
@@ -260,13 +400,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     imageBase64 = imageBase64,
                     imageMimeType = imageMimeType
                 ).catch { e ->
-                    _isGenerating.value = false
-                    val errorMsg = assistantPlaceholder.copy(
-                        content = "Sorry, an error occurred while streaming response: ${e.message}",
-                        isStreaming = false,
-                        isError = true
-                    )
-                    repository.insertMessage(errorMsg)
+                    isErrorOccurred = true
+                    errorText = e.localizedMessage ?: "Unknown error occurred"
                 }.collect { chunk ->
                     accumulatedContent.append(chunk)
                     val now = System.currentTimeMillis()
@@ -281,12 +416,40 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 _isGenerating.value = false
-                val finalMsg = assistantPlaceholder.copy(
-                    content = accumulatedContent.toString(),
-                    isStreaming = false,
-                    tokenCount = accumulatedContent.length / 4
-                )
-                repository.insertMessage(finalMsg)
+
+                if (isErrorOccurred) {
+                    val finalContent = if (accumulatedContent.isNotEmpty()) {
+                        "${accumulatedContent}\n\n⚠️ **Error:** $errorText"
+                    } else {
+                        "⚠️ **Error:** $errorText"
+                    }
+                    val errorMsg = assistantPlaceholder.copy(
+                        content = finalContent,
+                        isStreaming = false,
+                        isError = true
+                    )
+                    repository.insertMessage(errorMsg)
+                } else {
+                    val fullText = accumulatedContent.toString()
+                    
+                    // Parse any memory tags generated by AI: [MEMORY: key | value]
+                    val memoryRegex = Regex("\\[MEMORY:\\s*([^|\\]=]+)[|=]([^\\]]+)\\]", RegexOption.IGNORE_CASE)
+                    memoryRegex.findAll(fullText).forEach { match ->
+                        val k = match.groupValues[1].trim()
+                        val v = match.groupValues[2].trim()
+                        if (k.isNotBlank() && v.isNotBlank()) {
+                            addMemory(k, v)
+                        }
+                    }
+
+                    val cleanedText = fullText.replace(memoryRegex, "").trim()
+                    val finalMsg = assistantPlaceholder.copy(
+                        content = if (cleanedText.isNotBlank()) cleanedText else fullText,
+                        isStreaming = false,
+                        tokenCount = fullText.length / 4
+                    )
+                    repository.insertMessage(finalMsg)
+                }
             }
         }
     }

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FormatColorFill
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
@@ -52,6 +53,7 @@ fun PromptComposer(
     attachments: List<Attachment>,
     onAddAttachment: (Attachment) -> Unit,
     onRemoveAttachment: (Attachment) -> Unit,
+    onHighlightClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -254,6 +256,18 @@ fun PromptComposer(
                                 imageVector = Icons.Default.Mic,
                                 contentDescription = "Voice Input",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // Multi-Color Chat Highlighting Button at Bottom of Chat
+                        IconButton(
+                            onClick = onHighlightClick,
+                            modifier = Modifier.size(36.dp).testTag("bottom_highlight_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FormatColorFill,
+                                contentDescription = "Multi-Color Highlight",
+                                tint = TerracottaPrimary
                             )
                         }
 

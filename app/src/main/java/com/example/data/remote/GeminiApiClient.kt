@@ -111,6 +111,8 @@ class GeminiApiClient {
 
         val isRealApiKey = apiKey.isNotBlank() && apiKey != "YOUR_AEROLINK_API_KEY" && apiKey != "MY_GEMINI_API_KEY"
 
+        var lastErrorMsg: String? = null
+
         if (isRealApiKey) {
             var isStreamSuccess = false
 
@@ -194,9 +196,12 @@ class GeminiApiClient {
                                     }
                                 }
                             }
+                        } else {
+                            lastErrorMsg = "HTTP ${resp.code}: ${resp.message.ifBlank { "Request failed" }}"
                         }
                     }
                 } catch (e: Exception) {
+                    lastErrorMsg = e.localizedMessage ?: "Network request failed"
                     isStreamSuccess = false
                 }
 
@@ -282,9 +287,12 @@ class GeminiApiClient {
                                         }
                                     }
                                 }
+                            } else {
+                                lastErrorMsg = "HTTP ${resp.code}: ${resp.message.ifBlank { "Request failed" }}"
                             }
                         }
                     } catch (e: Exception) {
+                        lastErrorMsg = e.localizedMessage ?: "Network request failed"
                         isStreamSuccess = false
                     }
                 }
@@ -367,22 +375,21 @@ class GeminiApiClient {
                                     }
                                 }
                             }
+                        } else {
+                            lastErrorMsg = "HTTP ${resp.code}: ${resp.message.ifBlank { "Request failed" }}"
                         }
                     }
                 } catch (e: Exception) {
+                    lastErrorMsg = e.localizedMessage ?: "Network request failed"
                     isStreamSuccess = false
                 }
             }
 
             if (isStreamSuccess) return@flow
-        }
 
-        // Smart generative fallback engine (produces rich structured markdown & code responses)
-        val simulatedResponse = generateSmartResponse(prompt, modelId)
-        val chunks = simulatedResponse.chunked(3)
-        for (chunk in chunks) {
-            emit(chunk)
-            delay(18)
+            throw Exception(lastErrorMsg ?: "Model '$modelId' is currently unavailable or unreachable at $endpointUrl. Please check your API key, endpoint, or model selection.")
+        } else {
+            throw Exception("No valid API Key is configured for model '$modelId'. Please open Settings to set your API Key.")
         }
     }.flowOn(Dispatchers.IO)
 

@@ -7,6 +7,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -43,18 +44,30 @@ import java.util.Locale
 
 import androidx.compose.material.icons.outlined.VolumeUp
 
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.example.utils.PdfExporter
+import kotlinx.coroutines.launch
+
 @Composable
 fun MessageCard(
     message: ChatMessage,
     fontSizeSp: Float = 15f,
     speakingMessageId: String? = null,
+    isDrawerOpen: Boolean = false,
     onRegenerate: () -> Unit = {},
     onEditPrompt: (String) -> Unit = {},
     onImageClick: (String) -> Unit = {},
-    onSpeakClick: (String, String) -> Unit = { _, _ -> }
+    onSpeakClick: (String, String) -> Unit = { _, _ -> },
+    onSaveToMemory: (String, String) -> Unit = { _, _ -> },
+    onUpdateContent: (String, String) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val isUser = message.role == "user"
+    var showHighlightDialog by remember { mutableStateOf(false) }
 
     val formattedTime = remember(message.timestamp) {
         val sdf = SimpleDateFormat("h:mm a", Locale.getDefault())
@@ -73,6 +86,8 @@ fun MessageCard(
             shape = RoundedCornerShape(16.dp),
             color = if (isUser) {
                 TerracottaPrimary
+            } else if (message.isError) {
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
             } else {
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
             },
@@ -81,7 +96,7 @@ fun MessageCard(
                 .fillMaxWidth()
                 .border(
                     width = 1.dp,
-                    color = if (isUser) Color.Transparent else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                    color = if (isUser) Color.Transparent else if (message.isError) MaterialTheme.colorScheme.error.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
                     shape = RoundedCornerShape(16.dp)
                 )
         ) {
@@ -93,17 +108,17 @@ fun MessageCard(
                         modifier = Modifier.padding(bottom = 8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.AutoAwesome,
+                            imageVector = if (message.isError) Icons.Default.ErrorOutline else Icons.Default.AutoAwesome,
                             contentDescription = null,
-                            tint = TerracottaPrimary,
+                            tint = if (message.isError) MaterialTheme.colorScheme.error else TerracottaPrimary,
                             modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Aether AI",
+                            text = if (message.isError) "Aether AI — Generation Error" else "Aether AI",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = TerracottaPrimary
+                            color = if (message.isError) MaterialTheme.colorScheme.error else TerracottaPrimary
                         )
                     }
                 }
@@ -155,20 +170,39 @@ fun MessageCard(
                     }
                 }
 
-                // Content
-                if (isUser) {
-                    Text(
-                        text = message.content,
-                        fontSize = fontSizeSp.sp,
-                        lineHeight = (fontSizeSp * 1.4f).sp,
-                        color = Color.White
-                    )
-                } else if (message.content.isNotEmpty()) {
-                    MarkdownText(
-                        markdown = message.content,
-                        fontSizeSp = fontSizeSp,
-                        onImageClick = onImageClick
-                    )
+                // Content wrapped in SelectionContainer only when drawer is closed so selection handles do not leak over drawer
+                if (isDrawerOpen) {
+                    if (isUser) {
+                        Text(
+                            text = message.content,
+                            fontSize = fontSizeSp.sp,
+                            lineHeight = (fontSizeSp * 1.4f).sp,
+                            color = Color.White
+                        )
+                    } else if (message.content.isNotEmpty()) {
+                        MarkdownText(
+                            markdown = message.content,
+                            fontSizeSp = fontSizeSp,
+                            onImageClick = onImageClick
+                        )
+                    }
+                } else {
+                    SelectionContainer {
+                        if (isUser) {
+                            Text(
+                                text = message.content,
+                                fontSize = fontSizeSp.sp,
+                                lineHeight = (fontSizeSp * 1.4f).sp,
+                                color = Color.White
+                            )
+                        } else if (message.content.isNotEmpty()) {
+                            MarkdownText(
+                                markdown = message.content,
+                                fontSizeSp = fontSizeSp,
+                                onImageClick = onImageClick
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -185,6 +219,37 @@ fun MessageCard(
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
+
+            if (isUser) {
+                // Copy User Prompt Button
+                Icon(
+                    imageVector = Icons.Outlined.ContentCopy,
+                    contentDescription = "Copy User Prompt",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(15.dp)
+                        .clickable {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Prompt", message.content))
+                            Toast.makeText(context, "Prompt copied to clipboard!", Toast.LENGTH_SHORT).show()
+                        }
+                        .testTag("copy_prompt_button")
+                )
+
+                // Reuse / Edit Prompt Button
+                Icon(
+                    imageVector = Icons.Default.EditNote,
+                    contentDescription = "Reuse / Edit Query",
+                    tint = TerracottaPrimary,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clickable {
+                            onEditPrompt(message.content)
+                            Toast.makeText(context, "Loaded query into message bar", Toast.LENGTH_SHORT).show()
+                        }
+                        .testTag("reuse_prompt_button")
+                )
+            }
 
             if (!isUser && !message.isStreaming && message.content.isNotEmpty()) {
                 val isSpeakingThis = speakingMessageId == message.id
@@ -207,9 +272,45 @@ fun MessageCard(
                         .clickable {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("Message", message.content))
-                            Toast.makeText(context, "Message copied", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Message copied to clipboard", Toast.LENGTH_SHORT).show()
                         }
                 )
+
+                // Export to PDF Note
+                Icon(
+                    imageVector = Icons.Default.PictureAsPdf,
+                    contentDescription = "Export PDF Note",
+                    tint = TerracottaPrimary,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable {
+                            scope.launch {
+                                val firstLine = message.content.lines().firstOrNull { it.isNotBlank() } ?: "Study Note"
+                                val title = firstLine.take(40).removePrefix("#").trim()
+                                PdfExporter.exportNoteToPdf(
+                                    context = context,
+                                    title = title,
+                                    content = message.content,
+                                    modelName = "Aether AI Note"
+                                )
+                            }
+                        }
+                )
+
+                // Save Note to AI Memory
+                Icon(
+                    imageVector = Icons.Default.BookmarkBorder,
+                    contentDescription = "Save to Notes & Memory",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable {
+                            val key = "Note ${SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date())}"
+                            onSaveToMemory(key, message.content)
+                            Toast.makeText(context, "Saved note to AI Memory!", Toast.LENGTH_SHORT).show()
+                        }
+                )
+
 
                 Icon(
                     imageVector = Icons.Outlined.Share,
@@ -237,6 +338,18 @@ fun MessageCard(
                 )
             }
         }
+    }
+
+    if (showHighlightDialog) {
+        HighlightReviewDialog(
+            initialContent = message.content,
+            onDismiss = { showHighlightDialog = false },
+            onSave = { updatedText ->
+                onUpdateContent(message.id, updatedText)
+                showHighlightDialog = false
+                Toast.makeText(context, "Highlights saved to message!", Toast.LENGTH_SHORT).show()
+            }
+        )
     }
 }
 
@@ -366,4 +479,332 @@ fun TypingIndicatorDots() {
                 .background(TerracottaPrimary.copy(alpha = dot3Alpha))
         )
     }
+}
+
+@Composable
+fun HighlightReviewDialog(
+    initialContent: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var contentText by remember { mutableStateOf(initialContent) }
+    var selectedColor by remember { mutableStateOf("yellow") } // yellow, green, pink, cyan, orange
+
+    val colorsMap = listOf(
+        "yellow" to (Color(0xFFFFF176) to "Yellow"),
+        "green" to (Color(0xFFA5D6A7) to "Green"),
+        "pink" to (Color(0xFFF48FB1) to "Pink"),
+        "cyan" to (Color(0xFF80DEEA) to "Blue"),
+        "orange" to (Color(0xFFFFCC80) to "Orange")
+    )
+
+    // Split content by lines / sentences so ALL lines can be selected and highlighted!
+    val lines = remember(initialContent) {
+        initialContent
+            .split("\n")
+            .filter { it.isNotBlank() }
+            .ifEmpty { listOf(initialContent) }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.FormatColorFill,
+                        contentDescription = null,
+                        tint = TerracottaPrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Highlight Chat Text", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+
+                TextButton(
+                    onClick = {
+                        contentText = contentText
+                            .replace(Regex("<mark[^>]*>"), "")
+                            .replace("</mark>", "")
+                    }
+                ) {
+                    Text("Reset", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 460.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // 5 Color Palette
+                Text(
+                    text = "Select Color:",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    colorsMap.forEach { (key, colorPair) ->
+                        val (colorVal, label) = colorPair
+                        val isSelected = selectedColor == key
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable { selectedColor = key }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(colorVal)
+                                    .border(
+                                        width = if (isSelected) 3.dp else 1.dp,
+                                        color = if (isSelected) TerracottaPrimary else Color.Gray.copy(alpha = 0.5f),
+                                        shape = CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isSelected) {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = label,
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = label,
+                                fontSize = 10.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) TerracottaPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider()
+
+                Text(
+                    text = "Tap any line below to highlight or remove highlight:",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // Scrollable list of ALL lines in the message
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(lines.size) { index ->
+                        val lineText = lines[index].trim()
+                        val isLineHighlighted = contentText.contains(lineText) && contentText.contains("<mark")
+                        val activeColor = colorsMap.find { it.first == selectedColor }?.second?.first ?: Color(0xFFFFF176)
+
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isLineHighlighted) activeColor.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface
+                            ),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isLineHighlighted) activeColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val regex = Regex("<mark[^>]*>(${Regex.escape(lineText)})</mark>")
+                                    if (contentText.contains(regex)) {
+                                        // Remove highlight from this line
+                                        contentText = contentText.replace(regex, "$1")
+                                    } else {
+                                        // Highlight line in selected color
+                                        val tagged = "<mark color=\"$selectedColor\">$lineText</mark>"
+                                        contentText = if (contentText.contains(lineText)) {
+                                            contentText.replace(lineText, tagged)
+                                        } else {
+                                            contentText + "\n" + tagged
+                                        }
+                                    }
+                                }
+                        ) {
+                            Text(
+                                text = lineText,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "Live Preview:",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Box(
+                    modifier = Modifier
+                        .height(80.dp)
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                        .padding(8.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    MarkdownText(
+                        markdown = contentText,
+                        fontSizeSp = 12f
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(contentText) },
+                colors = ButtonDefaults.buttonColors(containerColor = TerracottaPrimary),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Apply Highlights", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun SelectMessageToHighlightDialog(
+    messages: List<ChatMessage>,
+    onSelectMessage: (ChatMessage) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.FormatColorFill,
+                    contentDescription = null,
+                    tint = TerracottaPrimary,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Select Message to Highlight", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Tap any message in this conversation to apply multi-color highlights:",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(messages.size) { index ->
+                        val msg = messages[index]
+                        val isUser = msg.role == "user"
+                        val hasHighlight = msg.content.contains("<mark")
+
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isUser) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            border = BorderStroke(
+                                1.dp,
+                                if (hasHighlight) TerracottaPrimary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelectMessage(msg) }
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (isUser) "👤 User Prompt" else "🤖 AI Response",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isUser) TerracottaPrimary else MaterialTheme.colorScheme.primary
+                                    )
+
+                                    if (hasHighlight) {
+                                        Surface(
+                                            color = Color(0xFFFFF176),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "Highlighted",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.Black,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                val cleanText = msg.content
+                                    .replace(Regex("<mark[^>]*>"), "")
+                                    .replace("</mark>", "")
+                                    .trim()
+
+                                Text(
+                                    text = cleanText.take(90) + if (cleanText.length > 90) "..." else "",
+                                    fontSize = 12.sp,
+                                    maxLines = 2,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }

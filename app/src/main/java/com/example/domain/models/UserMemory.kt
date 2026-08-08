@@ -5,5 +5,6 @@ data class UserMemory(
     val category: String,
     val content: String,
     val isEnabled: Boolean = true,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val folderId: String? = null
 )
