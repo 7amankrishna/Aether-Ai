@@ -154,7 +154,7 @@ fun PromptComposer(
                     onValueChange = onPromptChange,
                     placeholder = {
                         Text(
-                            text = "Message Aether AI...",
+                            text = "Message Aman.ai...",
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             fontSize = 15.sp
                         )
@@ -243,7 +243,7 @@ fun PromptComposer(
                                             RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                                             RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
                                         )
-                                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Aether AI...")
+                                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Aman.ai...")
                                     }
                                     speechLauncher.launch(intent)
                                 } catch (e: Exception) {

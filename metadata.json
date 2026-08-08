@@ -1,5 +1,5 @@
 {
-  "name": "Aether AI",
+  "name": "Aman.ai",
   "description": "Premium native AI assistant app inspired by modern conversational AI experiences, featuring streaming Markdown responses, rich prompt composer, and local persistence.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

@@ -41,7 +41,7 @@ object ImageUtils {
                         .setTitle("AI Generated Image")
                         .setDescription("Downloading image to Pictures folder...")
                         .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES, "Aether_AI_${System.currentTimeMillis()}.png")
+                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES, "Aman_ai_${System.currentTimeMillis()}.png")
                         .setAllowedOverMetered(true)
                         .setAllowedOverRoaming(true)
 
@@ -80,7 +80,7 @@ object ImageUtils {
 
     private suspend fun saveBitmapToGallery(context: Context, bitmap: Bitmap) {
         withContext(Dispatchers.IO) {
-            val filename = "Aether_AI_${System.currentTimeMillis()}.png"
+            val filename = "Aman_ai_${System.currentTimeMillis()}.png"
             var fos: OutputStream? = null
 
             try {

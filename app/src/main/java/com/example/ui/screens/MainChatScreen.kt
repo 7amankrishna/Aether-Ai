@@ -361,7 +361,7 @@ fun MainChatScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Ask Aether AI anything, upload documents or code, or brainstorm ideas.",
+                            text = "Ask Aman.ai anything, upload documents or code, or brainstorm ideas.",
                             fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

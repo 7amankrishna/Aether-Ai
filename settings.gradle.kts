@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Aether AI"
+rootProject.name = "Aman.ai"
 
 include(":app")

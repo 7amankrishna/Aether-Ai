@@ -1,13 +1,16 @@
 package com.example.utils
 
+import android.app.DownloadManager
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -26,14 +29,15 @@ object PdfExporter {
         context: Context,
         title: String,
         content: String,
-        modelName: String = "Aether AI"
-    ) {
-        withContext(Dispatchers.IO) {
+        modelName: String = "Aman.ai"
+    ): Uri? {
+        return withContext(Dispatchers.IO) {
             try {
                 val pdfDocument = PdfDocument()
                 val pageWidth = 595 // A4 width in points
                 val pageHeight = 842 // A4 height in points
                 val margin = 40
+                var savedUri: Uri? = null
                 val usableWidth = pageWidth - (margin * 2)
 
                 var currentPageNum = 1
@@ -89,7 +93,7 @@ object PdfExporter {
                 var yPos = margin.toFloat() + 20f
 
                 // Draw Header
-                val displayTitle = if (title.isBlank()) "Aether AI Student Note" else title
+                val displayTitle = if (title.isBlank()) "Aman.ai Student Note" else title
                 canvas.drawText(displayTitle, margin.toFloat(), yPos, titlePaint)
                 yPos += 22f
 
@@ -190,7 +194,7 @@ object PdfExporter {
                 pdfDocument.finishPage(page)
 
                 val timestamp = System.currentTimeMillis()
-                val filename = "Aether_Note_$timestamp.pdf"
+                val filename = "Aman_Note_$timestamp.pdf"
                 var outputStream: OutputStream? = null
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -198,15 +202,17 @@ object PdfExporter {
                     val contentValues = ContentValues().apply {
                         put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
                         put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
-                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS + "/AetherNotes")
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS + "/AmanNotes")
                     }
                     val pdfUri = resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
                     outputStream = pdfUri?.let { resolver.openOutputStream(it) }
+                    savedUri = pdfUri
                 } else {
-                    val docsDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "AetherNotes")
+                    val docsDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "AmanNotes")
                     if (!docsDir.exists()) docsDir.mkdirs()
                     val pdfFile = File(docsDir, filename)
                     outputStream = FileOutputStream(pdfFile)
+                    savedUri = Uri.fromFile(pdfFile)
                 }
 
                 outputStream?.use {
@@ -215,12 +221,42 @@ object PdfExporter {
                 pdfDocument.close()
 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "📄 PDF Note saved to Documents/AetherNotes!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "📄 PDF Note saved to Documents/AmanNotes!", Toast.LENGTH_SHORT).show()
                 }
+                savedUri
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, "Failed to export PDF: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                 }
+                null
+            }
+        }
+    }
+
+    fun openDocumentFolder(context: Context, pdfUri: Uri?) {
+        try {
+            val folderUri = Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADocuments%2FAmanNotes")
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(folderUri, "vnd.android.document/directory")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e1: Exception) {
+            try {
+                if (pdfUri != null) {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(pdfUri, "application/pdf")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Open PDF Note"))
+                } else {
+                    val intent = Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                }
+            } catch (e2: Exception) {
+                Toast.makeText(context, "Document folder: Documents/AmanNotes", Toast.LENGTH_LONG).show()
             }
         }
     }

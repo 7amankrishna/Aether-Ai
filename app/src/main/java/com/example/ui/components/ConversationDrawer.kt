@@ -117,7 +117,7 @@ fun ConversationDrawerContent(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = "Aether AI",
+                        text = "Aman.ai",
                         fontWeight = FontWeight.Bold,
                         fontSize = 17.sp,
                         color = MaterialTheme.colorScheme.onSurface

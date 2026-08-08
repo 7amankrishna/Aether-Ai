@@ -21,7 +21,7 @@ data class UserSettings(
     val activeAccessPointId: String = "aerolink_primary",
     val isAdminMode: Boolean = false,
     val temperature: Float = 0.7f,
-    val systemPrompt: String = "You are Aether AI, an exceptionally smart, elegant, helpful, and concise AI assistant with a friendly and polished tone."
+    val systemPrompt: String = "You are Aman.ai, an exceptionally smart, elegant, helpful, and concise AI assistant with a friendly and polished tone."
 )
 
 class UserPreferences(context: Context) {
@@ -63,7 +63,7 @@ class UserPreferences(context: Context) {
             temperature = prefs.getFloat("temperature", 0.7f),
             systemPrompt = prefs.getString(
                 "system_prompt",
-                "You are Aether AI, an exceptionally smart, elegant, helpful, and concise AI assistant with a friendly and polished tone."
+                "You are Aman.ai, an exceptionally smart, elegant, helpful, and concise AI assistant with a friendly and polished tone."
             ) ?: ""
         )
     }

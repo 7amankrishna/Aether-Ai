@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
@@ -18,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
@@ -68,6 +70,8 @@ fun MessageCard(
     val scope = rememberCoroutineScope()
     val isUser = message.role == "user"
     var showHighlightDialog by remember { mutableStateOf(false) }
+    var isPdfExported by remember { mutableStateOf(false) }
+    var exportedPdfUri by remember { mutableStateOf<Uri?>(null) }
 
     val formattedTime = remember(message.timestamp) {
         val sdf = SimpleDateFormat("h:mm a", Locale.getDefault())
@@ -115,7 +119,7 @@ fun MessageCard(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (message.isError) "Aether AI — Generation Error" else "Aether AI",
+                            text = if (message.isError) "Aman.ai — Generation Error" else "Aman.ai",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (message.isError) MaterialTheme.colorScheme.error else TerracottaPrimary
@@ -287,15 +291,47 @@ fun MessageCard(
                             scope.launch {
                                 val firstLine = message.content.lines().firstOrNull { it.isNotBlank() } ?: "Study Note"
                                 val title = firstLine.take(40).removePrefix("#").trim()
-                                PdfExporter.exportNoteToPdf(
+                                val uri = PdfExporter.exportNoteToPdf(
                                     context = context,
                                     title = title,
                                     content = message.content,
-                                    modelName = "Aether AI Note"
+                                    modelName = "Aman.ai Note"
                                 )
+                                if (uri != null) {
+                                    isPdfExported = true
+                                    exportedPdfUri = uri
+                                }
                             }
                         }
                 )
+
+                // Appears ONLY IF user exports the PDF
+                if (isPdfExported) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(TerracottaPrimary.copy(alpha = 0.12f))
+                            .clickable {
+                                PdfExporter.openDocumentFolder(context, exportedPdfUri)
+                            }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.FolderOpen,
+                            contentDescription = "Open Document Path",
+                            tint = TerracottaPrimary,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "Open Folder",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TerracottaPrimary
+                        )
+                    }
+                }
 
                 // Save Note to AI Memory
                 Icon(
